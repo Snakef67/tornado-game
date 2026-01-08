@@ -3,27 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tornado Interceptor: Fixed View</title>
+    <title>Tornado Interceptor: 2P Master</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #111; font-family: monospace; }
-        #ui { position: absolute; top: 10px; left: 10px; color: #0f0; background: rgba(0,0,0,0.8); padding: 10px; z-index: 10; border: 1px solid #0f0; }
-        .bar { width: 200px; height: 10px; border: 1px solid #0f0; margin: 5px 0; }
-        #progress { width: 0%; height: 100%; background: #0f0; }
-        #win { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: black; color: #0f0; padding: 50px; border: 5px solid #0f0; text-align: center; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; display: flex; }
+        .viewport { width: 50vw; height: 100vh; position: relative; border-right: 2px solid #0f0; }
+        .ui { position: absolute; top: 15px; left: 15px; color: #0f0; background: rgba(0,0,0,0.85); padding: 12px; pointer-events: none; border: 1px solid #0f0; font-size: 12px; }
+        .bar-bg { width: 140px; height: 10px; border: 1px solid #0f0; margin-top: 5px; background: #000; }
+        .progress { width: 0%; height: 100%; background: #0f0; transition: width 0.1s; }
+        #win-screen { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #000; border: 4px solid #0f0; color: #0f0; padding: 40px; text-align: center; z-index: 1000; box-shadow: 0 0 30px #0f0; }
+        .status-anchor { color: #f0f; text-shadow: 0 0 5px #f0f; }
+        .status-drive { color: #0f0; }
+        button { background: #0f0; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; margin-top: 15px; }
     </style>
 </head>
 <body>
-    <div id="ui">
-        [ INTERCEPTOR HUD ]<br>
-        STATUS: <span id="status">DRIVING</span><br>
-        DATA: <div class="bar"><div id="progress"></div></div>
-        W/A/S/D to Drive | SPACE to Anchor
+    <div class="viewport" id="p1-container">
+        <div class="ui">
+            [ P1: INTERCEPTOR ]<br>
+            MODE: <span id="p1-status" class="status-drive">DRIVING</span><br>
+            DATA: <div class="bar-bg"><div id="p1-progress" class="progress"></div></div>
+            <br>W/A/S/D to Steer<br>SPACE to ANCHOR
+        </div>
     </div>
 
-    <div id="win">
-        <h1>MISSION COMPLETE</h1>
-        <p>The Rabbit and Ecosystem are Safe!</p>
-        <button onclick="location.reload()">RESTART</button>
+    <div class="viewport" id="p2-container">
+        <div class="ui">
+            [ P2: INTERCEPTOR ]<br>
+            MODE: <span id="p2-status" class="status-drive">DRIVING</span><br>
+            DATA: <div class="bar-bg"><div id="p2-progress" class="progress"></div></div>
+            <br>ARROWS to Steer<br>ENTER to ANCHOR
+        </div>
+    </div>
+
+    <div id="win-screen">
+        <h1 id="winner-text">P1 WINS!</h1>
+        <p>The Tornado Data is secured.</p>
+        <button onclick="location.reload()">NEW MISSION</button>
     </div>
 
     <script type="importmap">
@@ -33,107 +48,142 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // --- SCENE SETUP ---
+        // --- GLOBAL SCENE ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000022); // Dark Blue Sky
-        
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+        scene.background = new THREE.Color(0x050510);
+        scene.fog = new THREE.FogExp2(0x050510, 0.015);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
 
-        // --- LIGHTING ---
-        const light = new THREE.HemisphereLight(0xffffff, 0x444444, 2);
-        scene.add(light);
-
-        // --- THE FLOOR (Red Grid - If you see this, the game is working) ---
-        const grid = new THREE.GridHelper(500, 50, 0xff0000, 0x444444);
+        const grid = new THREE.GridHelper(2000, 100, 0x005500, 0x111111);
         grid.position.y = -1;
         scene.add(grid);
 
-        // --- THE CAR GROUP ---
-        const car = new THREE.Group();
-        scene.add(car);
-
-        // Dashboard (The "Car")
-        const dashBody = new THREE.Mesh(
-            new THREE.BoxGeometry(2, 0.5, 1), 
-            new THREE.MeshStandardMaterial({ color: 0x222222 })
-        );
-        dashBody.position.set(0, -0.5, -0.5);
-        car.add(dashBody);
-
-        // The Rabbit (Passenger Seat)
-        const rabbit = new THREE.Mesh(
-            new THREE.BoxGeometry(0.2, 0.3, 0.2),
-            new THREE.MeshStandardMaterial({ color: 0xffffff })
-        );
-        rabbit.position.set(0.6, -0.3, -0.4);
-        car.add(rabbit);
-
-        // CAMERA SETUP
-        camera.position.set(0, 0.2, 0.5); // Moved back and up slightly
-        camera.lookAt(0, 0, -2);
-        car.add(camera);
-
-        // --- TORNADO ---
+        // --- TORNADO AI ---
         const tornado = new THREE.Group();
-        tornado.position.z = -30;
+        tornado.position.z = -50;
         scene.add(tornado);
-        const particles = [];
-        for(let i=0; i<500; i++) {
-            const p = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshBasicMaterial({color: 0x777777}));
-            p.userData = { a: Math.random()*7, r: Math.random()*5, h: Math.random()*30 };
+        const parts = [];
+        for(let i=0; i<900; i++){
+            const p = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshBasicMaterial({color: 0x666666}));
+            p.userData = { a: Math.random()*7, r: Math.random()*5, h: Math.random()*60 };
             tornado.add(p);
-            particles.push(p);
+            parts.push(p);
         }
 
-        // --- CONTROLS ---
-        let keys = {}, speed = 0, rot = 0, anchored = false, data = 0;
-        window.onkeydown = (e) => { 
-            keys[e.code] = true; 
-            if(e.code === 'Space') {
-                anchored = !anchored;
-                document.getElementById('status').innerText = anchored ? "ANCHORED" : "DRIVING";
-            }
+        // --- PLAYER CREATION ---
+        function createPlayer(startX) {
+            const car = new THREE.Group();
+            car.position.x = startX;
+            scene.add(car);
+
+            // Dashboard
+            const dash = new THREE.Mesh(new THREE.BoxGeometry(4, 1.2, 1.5), new THREE.MeshStandardMaterial({color: 0x151515}));
+            dash.position.set(0, -0.6, -0.6);
+            car.add(dash);
+
+            // Rabbit
+            const rabbit = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.2, 4, 8), new THREE.MeshStandardMaterial({color: 0xffffff}));
+            rabbit.position.set(0.6, -0.35, -0.4);
+            car.add(rabbit);
+
+            // Camera (Near clip 0.01 is key)
+            const cam = new THREE.PerspectiveCamera(75, (window.innerWidth/2)/window.innerHeight, 0.01, 1000);
+            cam.position.set(0, 0.1, 0.1); 
+            car.add(cam);
+
+            return { car, cam, data: 0, speed: 0, rot: 0, anchored: false };
+        }
+
+        const p1 = createPlayer(-10);
+        const p2 = createPlayer(10);
+
+        // --- RENDERERS ---
+        const ren1 = new THREE.WebGLRenderer({antialias:true});
+        ren1.setSize(window.innerWidth/2, window.innerHeight);
+        document.getElementById('p1-container').appendChild(ren1.domElement);
+
+        const ren2 = new THREE.WebGLRenderer({antialias:true});
+        ren2.setSize(window.innerWidth/2, window.innerHeight);
+        document.getElementById('p2-container').appendChild(ren2.domElement);
+
+        // --- INPUTS ---
+        const keys = {};
+        window.onkeydown = (e) => {
+            keys[e.code] = true;
+            if(e.code === 'Space') toggleAnchor(p1, 'p1-status');
+            if(e.code === 'Enter') toggleAnchor(p2, 'p2-status');
         };
         window.onkeyup = (e) => keys[e.code] = false;
+
+        function toggleAnchor(p, id) {
+            p.anchored = !p.anchored;
+            p.speed = 0; // Stop dead on anchor
+            const el = document.getElementById(id);
+            el.innerText = p.anchored ? "ANCHORED" : "DRIVING";
+            el.className = p.anchored ? "status-anchor" : "status-drive";
+        }
+
+        function movePlayer(p, up, down, left, right) {
+            if(!p.anchored) {
+                if(keys[left]) p.rot += 0.025;
+                if(keys[right]) p.rot -= 0.025;
+                if(keys[up]) p.speed -= 0.007;
+                if(keys[down]) p.speed += 0.007;
+                p.car.rotation.y = p.rot;
+                p.car.translateZ(p.speed);
+                p.speed *= 0.97;
+            } else {
+                // DATA COLLECTION LOGIC
+                let dist = p.car.position.distanceTo(tornado.position);
+                // Collect anywhere while anchored, but inside tornado (dist < 45) is 5x faster
+                let gain = dist < 45 ? 0.2 : 0.04;
+                p.data = Math.min(p.data + gain, 100);
+                
+                // Camera shake while anchored near storm
+                if(dist < 50) p.cam.position.x = (Math.random()-0.5) * 0.05;
+                else p.cam.position.x = 0;
+            }
+        }
 
         function animate() {
             requestAnimationFrame(animate);
 
-            // Tornado Movement
-            tornado.position.x += Math.sin(Date.now() * 0.001) * 0.05;
-
-            // Car Physics
-            if(!anchored) {
-                if(keys['KeyW']) speed -= 0.005;
-                if(keys['KeyS']) speed += 0.005;
-                if(keys['KeyA']) rot += 0.02;
-                if(keys['KeyD']) rot -= 0.02;
-            }
-            car.rotation.y = rot;
-            car.translateZ(speed);
-            speed *= 0.95;
-
-            // Tornado Spin
-            particles.forEach(p => {
+            // Tornado AI Movement
+            tornado.position.x += Math.sin(Date.now()*0.001)*0.15;
+            tornado.position.z += Math.cos(Date.now()*0.0006)*0.1;
+            parts.forEach(p => {
                 p.userData.a += 0.05;
-                let r = p.userData.r + (p.userData.h * 0.3);
+                let r = p.userData.r + (p.userData.h * 0.5);
                 p.position.set(Math.cos(p.userData.a)*r, p.userData.h, Math.sin(p.userData.a)*r);
             });
 
-            // Data Check
-            const d = car.position.distanceTo(tornado.position);
-            if(d < 30 && anchored) {
-                data += 0.2;
-                document.getElementById('progress').style.width = data + "%";
-                if(data >= 100) document.getElementById('win').style.display = 'block';
+            movePlayer(p1, 'KeyW', 'KeyS', 'KeyA', 'KeyD');
+            movePlayer(p2, 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight');
+
+            // UI Refresh
+            document.getElementById('p1-progress').style.width = p1.data + "%";
+            document.getElementById('p2-progress').style.width = p2.data + "%";
+
+            // Win Condition
+            if(p1.data >= 100 || p2.data >= 100) {
+                document.getElementById('win-screen').style.display = 'block';
+                document.getElementById('winner-text').innerText = p1.data >= 100 ? "PLAYER 1 WINS!" : "PLAYER 2 WINS!";
+                return;
             }
 
-            renderer.render(scene, camera);
+            ren1.render(scene, p1.cam);
+            ren2.render(scene, p2.cam);
         }
         animate();
+
+        window.onresize = () => {
+            ren1.setSize(window.innerWidth/2, window.innerHeight);
+            ren2.setSize(window.innerWidth/2, window.innerHeight);
+            p1.cam.aspect = (window.innerWidth/2)/window.innerHeight;
+            p2.cam.aspect = (window.innerWidth/2)/window.innerHeight;
+            p1.cam.updateProjectionMatrix();
+            p2.cam.updateProjectionMatrix();
+        };
     </script>
 </body>
 </html>
