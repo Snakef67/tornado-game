@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tornado Interceptor: Fixed View</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #111; font-family: monospace; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #0f0; background: rgba(0,0,0,0.8); padding: 10px; z-index: 10; border: 1px solid #0f0; }
+        .bar { width: 200px; height: 10px; border: 1px solid #0f0; margin: 5px 0; }
+        #progress { width: 0%; height: 100%; background: #0f0; }
+        #win { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: black; color: #0f0; padding: 50px; border: 5px solid #0f0; text-align: center; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        [ INTERCEPTOR HUD ]<br>
+        STATUS: <span id="status">DRIVING</span><br>
+        DATA: <div class="bar"><div id="progress"></div></div>
+        W/A/S/D to Drive | SPACE to Anchor
+    </div>
+
+    <div id="win">
+        <h1>MISSION COMPLETE</h1>
+        <p>The Rabbit and Ecosystem are Safe!</p>
+        <button onclick="location.reload()">RESTART</button>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000022); // Dark Blue Sky
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- LIGHTING ---
+        const light = new THREE.HemisphereLight(0xffffff, 0x444444, 2);
+        scene.add(light);
+
+        // --- THE FLOOR (Red Grid - If you see this, the game is working) ---
+        const grid = new THREE.GridHelper(500, 50, 0xff0000, 0x444444);
+        grid.position.y = -1;
+        scene.add(grid);
+
+        // --- THE CAR GROUP ---
+        const car = new THREE.Group();
+        scene.add(car);
+
+        // Dashboard (The "Car")
+        const dashBody = new THREE.Mesh(
+            new THREE.BoxGeometry(2, 0.5, 1), 
+            new THREE.MeshStandardMaterial({ color: 0x222222 })
+        );
+        dashBody.position.set(0, -0.5, -0.5);
+        car.add(dashBody);
+
+        // The Rabbit (Passenger Seat)
+        const rabbit = new THREE.Mesh(
+            new THREE.BoxGeometry(0.2, 0.3, 0.2),
+            new THREE.MeshStandardMaterial({ color: 0xffffff })
+        );
+        rabbit.position.set(0.6, -0.3, -0.4);
+        car.add(rabbit);
+
+        // CAMERA SETUP
+        camera.position.set(0, 0.2, 0.5); // Moved back and up slightly
+        camera.lookAt(0, 0, -2);
+        car.add(camera);
+
+        // --- TORNADO ---
+        const tornado = new THREE.Group();
+        tornado.position.z = -30;
+        scene.add(tornado);
+        const particles = [];
+        for(let i=0; i<500; i++) {
+            const p = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshBasicMaterial({color: 0x777777}));
+            p.userData = { a: Math.random()*7, r: Math.random()*5, h: Math.random()*30 };
+            tornado.add(p);
+            particles.push(p);
+        }
+
+        // --- CONTROLS ---
+        let keys = {}, speed = 0, rot = 0, anchored = false, data = 0;
+        window.onkeydown = (e) => { 
+            keys[e.code] = true; 
+            if(e.code === 'Space') {
+                anchored = !anchored;
+                document.getElementById('status').innerText = anchored ? "ANCHORED" : "DRIVING";
+            }
+        };
+        window.onkeyup = (e) => keys[e.code] = false;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Tornado Movement
+            tornado.position.x += Math.sin(Date.now() * 0.001) * 0.05;
+
+            // Car Physics
+            if(!anchored) {
+                if(keys['KeyW']) speed -= 0.005;
+                if(keys['KeyS']) speed += 0.005;
+                if(keys['KeyA']) rot += 0.02;
+                if(keys['KeyD']) rot -= 0.02;
+            }
+            car.rotation.y = rot;
+            car.translateZ(speed);
+            speed *= 0.95;
+
+            // Tornado Spin
+            particles.forEach(p => {
+                p.userData.a += 0.05;
+                let r = p.userData.r + (p.userData.h * 0.3);
+                p.position.set(Math.cos(p.userData.a)*r, p.userData.h, Math.sin(p.userData.a)*r);
+            });
+
+            // Data Check
+            const d = car.position.distanceTo(tornado.position);
+            if(d < 30 && anchored) {
+                data += 0.2;
+                document.getElementById('progress').style.width = data + "%";
+                if(data >= 100) document.getElementById('win').style.display = 'block';
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
