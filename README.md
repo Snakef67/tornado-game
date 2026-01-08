@@ -1,2 +1,2 @@
 # tornado-game
-## just a game i made
+a game I made because I was bored so ya 
